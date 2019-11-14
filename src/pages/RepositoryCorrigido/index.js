@@ -1,18 +1,12 @@
-/* eslint-disable react/state-in-constructor */
 import React, { Component } from 'react';
 import { Link } from 'react-router-dom';
 import PropTypes from 'prop-types';
+import api from '../../service/ApiGitHub';
 
-import { FaAngleDoubleLeft, FaAngleDoubleRight } from 'react-icons/fa';
-
-import ApiGitHub from '../../service/ApiGitHub';
-
-import { Loading, Owner, IssueList, Pagination } from './styles';
 import Container from '../../components/container';
+import { Loading, Owner, IssueList, IssueFilter, PageActions } from './styles';
 
-// import { Container } from './styles';
-
-class Repository extends Component {
+export default class Repository extends Component {
    static propTypes = {
       match: PropTypes.shape({
          params: PropTypes.shape({
@@ -25,21 +19,26 @@ class Repository extends Component {
       repository: {},
       issues: [],
       loading: true,
-      issueState: 'all',
+      filters: [
+         { state: 'all', label: 'Todas', active: true },
+         { state: 'open', label: 'Abertas', active: false },
+         { state: 'closed', label: 'Fechadas', active: false },
+      ],
+      filterIndex: 0,
       page: 1,
    };
 
    async componentDidMount() {
       const { match } = this.props;
+      const { filters } = this.state;
 
-      const { issueState } = this.state;
       const repoName = decodeURIComponent(match.params.repository);
 
       const [repository, issues] = await Promise.all([
-         ApiGitHub.get(`repos/${repoName}`),
-         ApiGitHub.get(`repos/${repoName}/issues`, {
+         api.get(`/repos/${repoName}`),
+         api.get(`/repos/${repoName}/issues`, {
             params: {
-               state: issueState,
+               state: filters.find(f => f.active).state,
                per_page: 5,
             },
          }),
@@ -53,48 +52,44 @@ class Repository extends Component {
    }
 
    loadIssues = async () => {
-      const { issueState, page } = this.state;
       const { match } = this.props;
+      const { filters, filterIndex, page } = this.state;
 
       const repoName = decodeURIComponent(match.params.repository);
-      const issues = await ApiGitHub.get(
-         `repos/${decodeURIComponent(repoName)}/issues`,
-         {
-            params: {
-               state: issueState,
-               per_page: 5,
-               page,
-            },
-         }
-      );
 
-      this.setState({
-         issues: issues.data,
-         loading: false,
+      const response = await api.get(`/repos/${repoName}/issues`, {
+         params: {
+            state: filters[filterIndex].state,
+            per_page: 5,
+            page,
+         },
       });
+
+      this.setState({ issues: response.data });
    };
 
-   handleChange = async e => {
-      await this.setState({
-         issueState: e.target.value,
-         loading: true,
-         page: 1,
-      });
+   handleFilterClick = async filterIndex => {
+      await this.setState({ filterIndex });
       this.loadIssues();
    };
 
-   handleChangePage = async action => {
+   handlePage = async action => {
       const { page } = this.state;
       await this.setState({
-         page: action === 'next' ? page + 1 : page - 1,
-         loading: true,
+         page: action === 'back' ? page - 1 : page + 1,
       });
-
       this.loadIssues();
    };
 
    render() {
-      const { repository, issues, loading, issueState, page } = this.state;
+      const {
+         repository,
+         loading,
+         issues,
+         filters,
+         filterIndex,
+         page,
+      } = this.state;
 
       if (loading) {
          return <Loading>Carregando</Loading>;
@@ -113,11 +108,17 @@ class Repository extends Component {
             </Owner>
 
             <IssueList>
-               <select value={issueState} onChange={this.handleChange}>
-                  <option value="all">Todos</option>
-                  <option value="open">Abertos</option>
-                  <option value="closed">Fechados</option>
-               </select>
+               <IssueFilter active={filterIndex}>
+                  {filters.map((filter, index) => (
+                     <button
+                        type="button"
+                        key={filter.label}
+                        onClick={() => this.handleFilterClick(index)}
+                     >
+                        {filter.label}
+                     </button>
+                  ))}
+               </IssueFilter>
                {issues.map(issue => (
                   <li key={String(issue.id)}>
                      <img src={issue.user.avatar_url} alt={issue.user.login} />
@@ -133,24 +134,20 @@ class Repository extends Component {
                   </li>
                ))}
             </IssueList>
-            <Pagination>
+            <PageActions>
                <button
                   type="button"
                   disabled={page < 2}
-                  onClick={() => this.handleChangePage('prev')}
+                  onClick={() => this.handlePage('back')}
                >
-                  <FaAngleDoubleLeft color="#000" size={14} />
+                  Anterior
                </button>
-               <button
-                  type="button"
-                  onClick={() => this.handleChangePage('next')}
-               >
-                  <FaAngleDoubleRight color="#000" size={14} />
+               <span>Página {page}</span>
+               <button type="button" onClick={() => this.handlePage('next')}>
+                  Próximo
                </button>
-            </Pagination>
+            </PageActions>
          </Container>
       );
    }
 }
-
-export default Repository;
